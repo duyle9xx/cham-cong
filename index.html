@@ -1190,6 +1190,7 @@
   <!-- Library for PDF Export -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
 <body>
   <!-- Canvas for 3D Particle Waves background -->
@@ -1756,8 +1757,21 @@
     });
 
     // Polyfill google.script.run for direct access / proxy access (e.g. Cloudflare Worker / China)
-    // Standalone LocalStorage Database initialization and API mocking
+    // Hybrid Supabase Cloud DB & LocalStorage Offline fallback database layer
     (function() {
+      // Supabase Credentials
+      const SUPABASE_URL = "https://mkzluvuzwhfnbcjgkwda.supabase.co";
+      const SUPABASE_KEY = "sb_publishable_03fG9WjWVpa66aDUjJwQrA_bQyBS1uj";
+
+      const useSupabase = SUPABASE_URL && SUPABASE_KEY && (typeof window.supabase !== 'undefined');
+      const supabase = useSupabase ? window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY) : null;
+
+      if (useSupabase) {
+        console.log("⚡ Supabase Cloud Sync mode active / 已激活 Supabase 雲數據庫模式");
+      } else {
+        console.log("📂 LocalStorage Offline mode active / 已激活 LocalStorage 離線模式");
+      }
+
       function getFormattedDate(date = new Date()) {
         const d = new Date(date.getTime() + 7 * 3600000); 
         const day = String(d.getUTCDate()).padStart(2, '0');
@@ -1774,7 +1788,7 @@
         return `${hours}:${minutes}:${seconds}`;
       }
 
-      // Safe JSON Parse helpers
+      // Safe JSON Parse helpers for LocalStorage
       function safeGetItem(key) {
         try {
           const val = localStorage.getItem(key);
@@ -1788,10 +1802,10 @@
         const defaultEmployees = [
           { ten: "阿纯 Thuần", trangThai: "⚪ Chưa bắt đầu / 未开始", checkInTime: "", checkOutTime: "" },
           { ten: "阿中 Chung", trangThai: "⚪ Chưa bắt đầu / 未开始", checkInTime: "", checkOutTime: "" },
-          { ten: "阿刚 Cương", trangThai: "⚪ Chưa bắt đầu / 未开始", checkInTime: "", checkOutTime: "" },
-          { ten: "阿长 Trường", trangThai: "⚪ Chưa bắt đầu / 未开始", checkInTime: "", checkOutTime: "" },
-          { ten: "阿维 Duy", trangThai: "⚪ Chưa bắt đầu / 未开始", checkInTime: "", checkOutTime: "" },
-          { ten: "阿庄 Trang", trangThai: "⚪ Chưa bắt đầu / 未开始", checkInTime: "", checkOutTime: "" }
+          { ten: "阿刚 Cương", trangThai: "⚪ Chưa bắt đầu / 未 bắt đầu", checkInTime: "", checkOutTime: "" },
+          { ten: "阿长 Trường", trangThai: "⚪ Chưa bắt đầu / 未 bắt đầu", checkInTime: "", checkOutTime: "" },
+          { ten: "阿维 Duy", trangThai: "⚪ Chưa bắt đầu / 未 bắt đầu", checkInTime: "", checkOutTime: "" },
+          { ten: "阿庄 Trang", trangThai: "⚪ Chưa bắt đầu / 未 bắt đầu", checkInTime: "", checkOutTime: "" }
         ];
         localStorage.setItem('chamcong_employees', JSON.stringify(defaultEmployees));
       }
@@ -1870,299 +1884,6 @@
         db.saveEmployees(employees);
       }
 
-      const backend = {
-        layDuLieuNhanVienWeb: () => {
-          localDongBoTatCaTrangThaiCheckIn();
-          return db.getEmployees();
-        },
-
-        themNhanVienWeb: (tenMoi, operatorUsername) => {
-          const employees = db.getEmployees();
-          const tenNormalized = tenMoi.trim();
-          if (!tenNormalized) {
-            return { success: false, message: "Tên nhân viên không được để trống / 员工姓名不能为空!" };
-          }
-          if (employees.some(emp => emp.ten.toLowerCase() === tenNormalized.toLowerCase())) {
-            return { success: false, message: "Nhân viên đã tồn tại / 员工已存在!" };
-          }
-          employees.push({
-            ten: tenNormalized,
-            trangThai: "⚪ Chưa bắt đầu / 未开始",
-            checkInTime: "",
-            checkOutTime: ""
-          });
-          db.saveEmployees(employees);
-          db.log(operatorUsername, "Thêm nhân viên / 添加员工", `Thêm mới nhân viên: ${tenNormalized}`);
-          return { success: true };
-        },
-
-        xoaNhanVienWeb: (tenNV, operatorUsername) => {
-          let employees = db.getEmployees();
-          const originalLength = employees.length;
-          employees = employees.filter(emp => emp.ten !== tenNV);
-          if (employees.length === originalLength) {
-            return { success: false, message: "Không tìm thấy nhân viên / 未找到员工!" };
-          }
-          db.saveEmployees(employees);
-          db.log(operatorUsername, "Xóa nhân viên / 删除员工", `Xóa nhân viên: ${tenNV}`);
-          return { success: true };
-        },
-
-        ghiChamCongWeb: (ten, isCheckIn, operatorUsername) => {
-          const employees = db.getEmployees();
-          const emp = employees.find(e => e.ten === ten);
-          if (!emp) return { success: false, message: "Không tìm thấy nhân viên / 未找到员工!" };
-
-          const now = new Date();
-          const ngay = getFormattedDate(now);
-          const gio = getFormattedTime(now);
-          const records = db.getRecords();
-
-          let record = records.find(r => r.ngay === ngay && r.ten === ten);
-          if (!record) {
-            record = {
-              ngay: ngay,
-              ten: ten,
-              times: Array(20).fill("")
-            };
-            records.push(record);
-          }
-
-          if (isCheckIn) {
-            let slotIndex = -1;
-            for (let c = 0; c < 20; c += 2) {
-              if (record.times[c] === "") {
-                slotIndex = c;
-                break;
-              }
-            }
-
-            if (slotIndex === -1) {
-              return { success: false, message: "Đã đạt giới hạn tối đa 10 ca làm việc trong ngày / 已达到单日10轮考勤上限!" };
-            }
-
-            record.times[slotIndex] = gio;
-            emp.trangThai = "🟢 Đang làm việc / 工作中";
-            emp.checkInTime = gio;
-            emp.checkOutTime = ""; 
-            db.log(operatorUsername, "Bắt đầu / Check-in", `Nhân viên: ${ten} lúc ${gio}`);
-          } else {
-            let slotIndex = -1;
-            for (let c = 0; c < 20; c += 2) {
-              if (record.times[c] !== "" && record.times[c + 1] === "") {
-                slotIndex = c + 1;
-                break;
-              }
-            }
-
-            if (slotIndex === -1) {
-              return { success: false, message: "Không tìm thấy lượt Check-in hợp lệ để Check-out / 未找到对应Check-in记录!" };
-            }
-
-            record.times[slotIndex] = gio;
-            emp.trangThai = "🔴 Đã kết thúc / 已结束";
-            emp.checkOutTime = gio;
-            db.log(operatorUsername, "Kết thúc / Check-out", `Nhân viên: ${ten} lúc ${gio}`);
-          }
-
-          db.saveEmployees(employees);
-          db.saveRecords(records);
-          return gio; 
-        },
-
-        layDuLieuBaoCaoWeb: (ngayCanXemStr) => {
-          const ngay = ngayCanXemStr || getFormattedDate();
-          const records = db.getRecords();
-          const reportList = [];
-
-          const dayRecords = records.filter(r => r.ngay === ngay);
-          dayRecords.forEach(r => {
-            let shiftCount = 0;
-            const shifts = [];
-            for (let c = 0; c < 20; c += 2) {
-              const vao = r.times[c];
-              const ra = r.times[c + 1];
-              if (vao || ra) {
-                shiftCount++;
-                shifts.push({
-                  luot: Math.floor(c / 2) + 1,
-                  vao: vao,
-                  ra: ra
-                });
-              }
-            }
-
-            reportList.push({
-              ten: r.ten,
-              tongGio: localTinhTongGio(r.times),
-              soLuot: shiftCount,
-              cacLuot: shifts
-            });
-          });
-
-          return {
-            success: true,
-            date: ngay,
-            data: reportList
-          };
-        },
-
-        layLichSuGhiNhanWeb: () => {
-          const records = db.getRecords();
-          const list = records.map((r, index) => ({
-            rowNum: index + 5, 
-            ngay: r.ngay,
-            ten: r.ten,
-            times: r.times
-          }));
-          list.reverse();
-          return list;
-        },
-
-        capNhatDongGhiNhanWeb: (rowNum, timesArray, operatorUsername) => {
-          const records = db.getRecords();
-          const idx = rowNum - 5;
-          if (idx < 0 || idx >= records.length) {
-            return { success: false, message: "Không tìm thấy dòng ghi nhận!" };
-          }
-          const oldRecord = records[idx];
-          records[idx].times = timesArray;
-          db.saveRecords(records);
-          db.log(operatorUsername, "Sửa ghi nhận thủ công", `Sửa lịch sử chấm công của ${oldRecord.ten} ngày ${oldRecord.ngay}`);
-          return { success: true };
-        },
-
-        xoaDongGhiNhanWeb: (rowNum, operatorUsername) => {
-          const records = db.getRecords();
-          const idx = rowNum - 5;
-          if (idx < 0 || idx >= records.length) {
-            return { success: false, message: "Không tìm thấy dòng ghi nhận!" };
-          }
-          const deleted = records.splice(idx, 1)[0];
-          db.saveRecords(records);
-          db.log(operatorUsername, "Xóa ghi nhận", `Xóa dòng chấm công ngày ${deleted.ngay} của ${deleted.ten}`);
-          return { success: true };
-        },
-
-        themGhiNhanThuCongWeb: (ngayStr, ten, timesArray, operatorUsername) => {
-          const records = db.getRecords();
-          const newRecord = {
-            ngay: ngayStr,
-            ten: ten,
-            times: timesArray
-          };
-          records.push(newRecord);
-          db.saveRecords(records);
-          db.log(operatorUsername, "Thêm ghi nhận thủ công", `Thêm chấm công thủ công ngày ${ngayStr} cho ${ten}`);
-          return { success: true };
-        },
-
-        dangNhapWeb: (username, password) => {
-          const accounts = db.getAccounts();
-          const user = accounts.find(a => a.username.toLowerCase() === username.toLowerCase() && a.passwordHash === password);
-          if (user) {
-            return {
-              success: true,
-              user: {
-                username: user.username,
-                hoTen: user.hoTen,
-                role: user.role
-              }
-            };
-          }
-          return { success: false, message: "Sai tên đăng nhập hoặc mật khẩu / 用户名或密码错误!" };
-        },
-
-        layDanhSachTaiKhoanWeb: () => {
-          const accounts = db.getAccounts();
-          return accounts.map(a => ({
-            username: a.username,
-            hoTen: a.hoTen,
-            role: a.role
-          }));
-        },
-
-        capNhatQuyenTaiKhoanWeb: (username, newRole, operatorUsername) => {
-          const accounts = db.getAccounts();
-          const user = accounts.find(a => a.username.toLowerCase() === username.toLowerCase());
-          if (!user) return { success: false, message: "Không tìm thấy tài khoản!" };
-          
-          user.role = newRole;
-          db.saveAccounts(accounts);
-          db.log(operatorUsername, "Cập nhật quyền", `Thay đổi quyền của ${username} thành ${newRole}`);
-          return { success: true };
-        },
-
-        xoaTaiKhoanWeb: (username, operatorUsername) => {
-          let accounts = db.getAccounts();
-          if (username.toLowerCase() === "admin") {
-            return { success: false, message: "Không thể xóa tài khoản Admin gốc!" };
-          }
-          const originalLength = accounts.length;
-          accounts = accounts.filter(a => a.username.toLowerCase() !== username.toLowerCase());
-          if (accounts.length === originalLength) {
-            return { success: false, message: "Không tìm thấy tài khoản!" };
-          }
-          db.saveAccounts(accounts);
-          db.log(operatorUsername, "Xóa tài khoản", `Xóa tài khoản: ${username}`);
-          return { success: true };
-        },
-
-        dangKyTaiKhoanWeb: (username, password, hoTen) => {
-          const accounts = db.getAccounts();
-          const uName = username.trim().toLowerCase();
-          if (accounts.some(a => a.username.toLowerCase() === uName)) {
-            return { success: false, message: "Tài khoản đăng nhập đã tồn tại!" };
-          }
-          accounts.push({
-            username: uName,
-            passwordHash: password, 
-            hoTen: hoTen,
-            role: "Guest"
-          });
-          db.saveAccounts(accounts);
-          return { success: true };
-        },
-
-        doiMatKhauWeb: (username, oldPassword, newPassword) => {
-          const accounts = db.getAccounts();
-          const user = accounts.find(a => a.username.toLowerCase() === username.toLowerCase());
-          if (!user) return { success: false, message: "Không tìm thấy tài khoản!" };
-          if (user.passwordHash !== oldPassword) {
-            return { success: false, message: "Mật khẩu cũ không chính xác!" };
-          }
-          user.passwordHash = newPassword;
-          db.saveAccounts(accounts);
-          return { success: true };
-        },
-
-        layNhatKyHoatDong: () => {
-          const logs = db.getLogs();
-          const list = logs.map(l => ({
-            time: l.time || "",
-            user: l.user || "",
-            action: l.action || "",
-            details: l.details || ""
-          }));
-          list.reverse();
-          return list;
-        },
-
-        xoaNhatKyHoatDong: () => {
-          db.saveLogs([]);
-          return true;
-        },
-
-        ghiNhatKy: (username, action, details) => {
-          db.log(username, action, details);
-          return true;
-        },
-
-        tinhTongGio: (rowTimes) => {
-          return localTinhTongGio(rowTimes);
-        }
-      };
-
       function localTinhTongGio(times) {
         let tongGiay = 0;
         for (let c = 0; c < 20; c += 2) {
@@ -2181,6 +1902,771 @@
         const phut = Math.floor((tongGiay % 3600) / 60);
         return `${gio}h ${phut.toString().padStart(2, "0")}m`;
       }
+
+      const backend = {
+        layDuLieuNhanVienWeb: async () => {
+          if (useSupabase) {
+            try {
+              const { data: emps, error: err1 } = await supabase
+                .from('chamcong_employees')
+                .select('*');
+              if (err1) throw err1;
+
+              const todayStr = getFormattedDate();
+              const { data: recs, error: err2 } = await supabase
+                .from('chamcong_records')
+                .eq('ngay', todayStr);
+              if (err2) throw err2;
+
+              const updatedEmps = [];
+              for (const emp of emps) {
+                const record = recs.find(r => r.ten === emp.ten);
+                let expectedTrangThai = "⚪ Chưa bắt đầu / 未开始";
+                let expectedIn = "";
+                let expectedOut = "";
+
+                if (record && record.times && record.times.length > 0) {
+                  let lastIndex = -1;
+                  for (let idx = 0; idx < record.times.length; idx++) {
+                    if (record.times[idx] !== "") {
+                      lastIndex = idx;
+                    }
+                  }
+                  if (lastIndex !== -1) {
+                    if (lastIndex % 2 === 0) {
+                      expectedTrangThai = "🟢 Đang làm việc / 工作中";
+                      expectedIn = record.times[lastIndex];
+                    } else {
+                      expectedTrangThai = "🔴 Đã kết thúc / 已结束";
+                      expectedIn = record.times[lastIndex - 1];
+                      expectedOut = record.times[lastIndex];
+                    }
+                  }
+                }
+
+                if (emp.trangThai !== expectedTrangThai || emp.checkInTime !== expectedIn || emp.checkOutTime !== expectedOut) {
+                  emp.trangThai = expectedTrangThai;
+                  emp.checkInTime = expectedIn;
+                  emp.checkOutTime = expectedOut;
+                  
+                  // Update asynchronously on Supabase
+                  supabase.from('chamcong_employees')
+                    .update({ trangThai: expectedTrangThai, checkInTime: expectedIn, checkOutTime: expectedOut })
+                    .eq('ten', emp.ten)
+                    .then(() => {});
+                }
+                updatedEmps.push(emp);
+              }
+              // Sort employees alphabetically by name to keep display layout consistent
+              updatedEmps.sort((a, b) => a.ten.localeCompare(b.ten));
+              return updatedEmps;
+            } catch (e) {
+              console.error("Lỗi Supabase layDuLieuNhanVienWeb:", e);
+              throw e;
+            }
+          } else {
+            localDongBoTatCaTrangThaiCheckIn();
+            const employees = db.getEmployees();
+            employees.sort((a, b) => a.ten.localeCompare(b.ten));
+            return employees;
+          }
+        },
+
+        themNhanVienWeb: async (tenMoi, operatorUsername) => {
+          const tenNormalized = tenMoi.trim();
+          if (!tenNormalized) {
+            return { success: false, message: "Tên nhân viên không được để trống / 员工姓名不能为空!" };
+          }
+          if (useSupabase) {
+            try {
+              const { data, error } = await supabase
+                .from('chamcong_employees')
+                .select('ten')
+                .eq('ten', tenNormalized);
+              if (error) throw error;
+              if (data.length > 0) {
+                return { success: false, message: "Nhân viên đã tồn tại / 员工已存在!" };
+              }
+
+              const { error: insErr } = await supabase
+                .from('chamcong_employees')
+                .insert({ ten: tenNormalized, trangThai: "⚪ Chưa bắt đầu / 未开始", checkInTime: "", checkOutTime: "" });
+              if (insErr) throw insErr;
+
+              await backend.ghiNhatKy(operatorUsername, "Thêm nhân viên / 添加员工", `Thêm mới nhân viên: ${tenNormalized}`);
+              return { success: true };
+            } catch (e) {
+              console.error(e);
+              return { success: false, message: e.message };
+            }
+          } else {
+            const employees = db.getEmployees();
+            if (employees.some(emp => emp.ten.toLowerCase() === tenNormalized.toLowerCase())) {
+              return { success: false, message: "Nhân viên đã tồn tại / 员工已存在!" };
+            }
+            employees.push({
+              ten: tenNormalized,
+              trangThai: "⚪ Chưa bắt đầu / 未开始",
+              checkInTime: "",
+              checkOutTime: ""
+            });
+            db.saveEmployees(employees);
+            db.log(operatorUsername, "Thêm nhân viên / 添加员工", `Thêm mới nhân viên: ${tenNormalized}`);
+            return { success: true };
+          }
+        },
+
+        xoaNhanVienWeb: async (tenNV, operatorUsername) => {
+          if (useSupabase) {
+            try {
+              const { error } = await supabase
+                .from('chamcong_employees')
+                .delete()
+                .eq('ten', tenNV);
+              if (error) throw error;
+
+              await backend.ghiNhatKy(operatorUsername, "Xóa nhân viên / 删除员工", `Xóa nhân viên: ${tenNV}`);
+              return { success: true };
+            } catch (e) {
+              console.error(e);
+              return { success: false, message: e.message };
+            }
+          } else {
+            let employees = db.getEmployees();
+            const originalLength = employees.length;
+            employees = employees.filter(emp => emp.ten !== tenNV);
+            if (employees.length === originalLength) {
+              return { success: false, message: "Không tìm thấy nhân viên / 未找到员工!" };
+            }
+            db.saveEmployees(employees);
+            db.log(operatorUsername, "Xóa nhân viên / 删除员工", `Xóa nhân viên: ${tenNV}`);
+            return { success: true };
+          }
+        },
+
+        ghiChamCongWeb: async (ten, isCheckIn, operatorUsername) => {
+          const now = new Date();
+          const ngay = getFormattedDate(now);
+          const gio = getFormattedTime(now);
+
+          if (useSupabase) {
+            try {
+              const { data: recs, error: recErr } = await supabase
+                .from('chamcong_records')
+                .select('*')
+                .eq('ngay', ngay)
+                .eq('ten', ten);
+              if (recErr) throw recErr;
+
+              let record = recs[0];
+              let timesArray = record ? [...record.times] : Array(20).fill("");
+              
+              if (isCheckIn) {
+                let slotIndex = -1;
+                for (let c = 0; c < 20; c += 2) {
+                  if (timesArray[c] === "" || timesArray[c] === null || timesArray[c] === undefined) {
+                    slotIndex = c;
+                    break;
+                  }
+                }
+                if (slotIndex === -1) {
+                  return { success: false, message: "Đã đạt giới hạn tối đa 10 ca làm việc trong ngày / 已达到单日10轮考勤上限!" };
+                }
+                timesArray[slotIndex] = gio;
+              } else {
+                let slotIndex = -1;
+                for (let c = 0; c < 20; c += 2) {
+                  if (timesArray[c] !== "" && timesArray[c] !== null && timesArray[c] !== undefined && (timesArray[c + 1] === "" || timesArray[c + 1] === null || timesArray[c + 1] === undefined)) {
+                    slotIndex = c + 1;
+                    break;
+                  }
+                }
+                if (slotIndex === -1) {
+                  return { success: false, message: "Không tìm thấy lượt Check-in hợp lệ để Check-out / 未找到对应Check-in记录!" };
+                }
+                timesArray[slotIndex] = gio;
+              }
+
+              if (record) {
+                const { error: updErr } = await supabase
+                  .from('chamcong_records')
+                  .update({ times: timesArray })
+                  .eq('id', record.id);
+                if (updErr) throw updErr;
+              } else {
+                const { error: insErr } = await supabase
+                  .from('chamcong_records')
+                  .insert({ ngay: ngay, ten: ten, times: timesArray });
+                if (insErr) throw insErr;
+              }
+
+              let expectedTrangThai = isCheckIn ? "🟢 Đang làm việc / 工作中" : "🔴 Đã kết thúc / 已结束";
+              let expectedIn = isCheckIn ? gio : "";
+              let expectedOut = isCheckIn ? "" : gio;
+
+              if (!isCheckIn) {
+                let lastIndex = -1;
+                for (let idx = 0; idx < 20; idx++) {
+                  if (timesArray[idx] !== "") {
+                    lastIndex = idx;
+                  }
+                }
+                if (lastIndex > 0) {
+                  expectedIn = timesArray[lastIndex - 1];
+                }
+              }
+
+              await supabase
+                .from('chamcong_employees')
+                .update({ trangThai: expectedTrangThai, checkInTime: expectedIn, checkOutTime: expectedOut })
+                .eq('ten', ten);
+
+              await backend.ghiNhatKy(operatorUsername, isCheckIn ? "Bắt đầu / Check-in" : "Kết thúc / Check-out", `Nhân viên: ${ten} lúc ${gio}`);
+              
+              return { success: true, time: gio };
+            } catch (e) {
+              console.error(e);
+              return { success: false, message: e.message };
+            }
+          } else {
+            const employees = db.getEmployees();
+            const emp = employees.find(e => e.ten === ten);
+            if (!emp) return { success: false, message: "Không tìm thấy nhân viên / 未找到员工!" };
+
+            const records = db.getRecords();
+            let record = records.find(r => r.ngay === ngay && r.ten === ten);
+            if (!record) {
+              record = {
+                ngay: ngay,
+                ten: ten,
+                times: Array(20).fill("")
+              };
+              records.push(record);
+            }
+
+            if (isCheckIn) {
+              let slotIndex = -1;
+              for (let c = 0; c < 20; c += 2) {
+                if (record.times[c] === "") {
+                  slotIndex = c;
+                  break;
+                }
+              }
+              if (slotIndex === -1) {
+                return { success: false, message: "Đã đạt giới hạn tối đa 10 ca làm việc trong ngày / 已 đạt đến giới hạn 10 ca!" };
+              }
+              record.times[slotIndex] = gio;
+              emp.trangThai = "🟢 Đang làm việc / 工作中";
+              emp.checkInTime = gio;
+              emp.checkOutTime = ""; 
+              db.log(operatorUsername, "Bắt đầu / Check-in", `Nhân viên: ${ten} lúc ${gio}`);
+            } else {
+              let slotIndex = -1;
+              for (let c = 0; c < 20; c += 2) {
+                if (record.times[c] !== "" && record.times[c + 1] === "") {
+                  slotIndex = c + 1;
+                  break;
+                }
+              }
+              if (slotIndex === -1) {
+                return { success: false, message: "Không tìm thấy lượt Check-in hợp lệ để Check-out / 未找到对应Check-in记录!" };
+              }
+              record.times[slotIndex] = gio;
+              emp.trangThai = "🔴 Đã kết thúc / 已结束";
+              emp.checkOutTime = gio;
+              db.log(operatorUsername, "Kết thúc / Check-out", `Nhân viên: ${ten} lúc ${gio}`);
+            }
+
+            db.saveEmployees(employees);
+            db.saveRecords(records);
+            return { success: true, time: gio }; 
+          }
+        },
+
+        layDuLieuBaoCaoWeb: async (ngayCanXemStr) => {
+          const ngay = ngayCanXemStr || getFormattedDate();
+          if (useSupabase) {
+            try {
+              const { data: recs, error } = await supabase
+                .from('chamcong_records')
+                .eq('ngay', ngay);
+              if (error) throw error;
+
+              const reportList = [];
+              recs.forEach(r => {
+                let shiftCount = 0;
+                const shifts = [];
+                for (let c = 0; c < 20; c += 2) {
+                  const vao = r.times[c];
+                  const ra = r.times[c + 1];
+                  if (vao || ra) {
+                    shiftCount++;
+                    shifts.push({
+                      luot: Math.floor(c / 2) + 1,
+                      vao: vao || "",
+                      ra: ra || ""
+                    });
+                  }
+                }
+                reportList.push({
+                  ten: r.ten,
+                  tongGio: localTinhTongGio(r.times),
+                  soLuot: shiftCount,
+                  cacLuot: shifts
+                });
+              });
+
+              return { success: true, date: ngay, data: reportList };
+            } catch (e) {
+              console.error(e);
+              return { success: false, message: e.message };
+            }
+          } else {
+            const records = db.getRecords();
+            const reportList = [];
+            const dayRecords = records.filter(r => r.ngay === ngay);
+            dayRecords.forEach(r => {
+              let shiftCount = 0;
+              const shifts = [];
+              for (let c = 0; c < 20; c += 2) {
+                const vao = r.times[c];
+                const ra = r.times[c + 1];
+                if (vao || ra) {
+                  shiftCount++;
+                  shifts.push({
+                    luot: Math.floor(c / 2) + 1,
+                    vao: vao,
+                    ra: ra
+                  });
+                }
+              }
+              reportList.push({
+                ten: r.ten,
+                tongGio: localTinhTongGio(r.times),
+                soLuot: shiftCount,
+                cacLuot: shifts
+              });
+            });
+            return { success: true, date: ngay, data: reportList };
+          }
+        },
+
+        layLichSuGhiNhanWeb: async () => {
+          if (useSupabase) {
+            try {
+              const { data, error } = await supabase
+                .from('chamcong_records')
+                .select('*')
+                .order('id', { ascending: false });
+              if (error) throw error;
+
+              return data.map(r => ({
+                rowNum: Number(r.id), 
+                ngay: r.ngay,
+                ten: r.ten,
+                times: r.times
+              }));
+            } catch (e) {
+              console.error(e);
+              return [];
+            }
+          } else {
+            const records = db.getRecords();
+            const list = records.map((r, index) => ({
+              rowNum: index + 5, 
+              ngay: r.ngay,
+              ten: r.ten,
+              times: r.times
+            }));
+            list.reverse();
+            return list;
+          }
+        },
+
+        capNhatDongGhiNhanWeb: async (rowNum, timesArray, operatorUsername) => {
+          if (useSupabase) {
+            try {
+              const { data, error: getErr } = await supabase
+                .from('chamcong_records')
+                .select('*')
+                .eq('id', rowNum);
+              if (getErr) throw getErr;
+              if (data.length === 0) return { success: false, message: "Không tìm thấy ghi nhận!" };
+              
+              const oldRecord = data[0];
+              const { error } = await supabase
+                .from('chamcong_records')
+                .update({ times: timesArray })
+                .eq('id', rowNum);
+              if (error) throw error;
+
+              await backend.ghiNhatKy(operatorUsername, "Sửa ghi nhận thủ công", `Sửa lịch sử chấm công của ${oldRecord.ten} ngày ${oldRecord.ngay}`);
+              return { success: true };
+            } catch (e) {
+              console.error(e);
+              return { success: false, message: e.message };
+            }
+          } else {
+            const records = db.getRecords();
+            const idx = rowNum - 5;
+            if (idx < 0 || idx >= records.length) {
+              return { success: false, message: "Không tìm thấy dòng ghi nhận!" };
+            }
+            const oldRecord = records[idx];
+            records[idx].times = timesArray;
+            db.saveRecords(records);
+            db.log(operatorUsername, "Sửa ghi nhận thủ công", `Sửa lịch sử chấm công của ${oldRecord.ten} ngày ${oldRecord.ngay}`);
+            return { success: true };
+          }
+        },
+
+        xoaDongGhiNhanWeb: async (rowNum, operatorUsername) => {
+          if (useSupabase) {
+            try {
+              const { data, error: getErr } = await supabase
+                .from('chamcong_records')
+                .select('*')
+                .eq('id', rowNum);
+              if (getErr) throw getErr;
+              if (data.length === 0) return { success: false, message: "Không tìm thấy ghi nhận!" };
+              
+              const deleted = data[0];
+              const { error } = await supabase
+                .from('chamcong_records')
+                .delete()
+                .eq('id', rowNum);
+              if (error) throw error;
+
+              await backend.ghiNhatKy(operatorUsername, "Xóa ghi nhận", `Xóa dòng chấm công ngày ${deleted.ngay} của ${deleted.ten}`);
+              return { success: true };
+            } catch (e) {
+              console.error(e);
+              return { success: false, message: e.message };
+            }
+          } else {
+            const records = db.getRecords();
+            const idx = rowNum - 5;
+            if (idx < 0 || idx >= records.length) {
+              return { success: false, message: "Không tìm thấy dòng ghi nhận!" };
+            }
+            const deleted = records.splice(idx, 1)[0];
+            db.saveRecords(records);
+            db.log(operatorUsername, "Xóa ghi nhận", `Xóa dòng chấm công ngày ${deleted.ngay} của ${deleted.ten}`);
+            return { success: true };
+          }
+        },
+
+        themGhiNhanThuCongWeb: async (ngayStr, ten, timesArray, operatorUsername) => {
+          if (useSupabase) {
+            try {
+              const { error } = await supabase
+                .from('chamcong_records')
+                .insert({ ngay: ngayStr, ten: ten, times: timesArray });
+              if (error) throw error;
+
+              await backend.ghiNhatKy(operatorUsername, "Thêm ghi nhận thủ công", `Thêm chấm công thủ công ngày ${ngayStr} cho ${ten}`);
+              return { success: true };
+            } catch (e) {
+              console.error(e);
+              return { success: false, message: e.message };
+            }
+          } else {
+            const records = db.getRecords();
+            const newRecord = {
+              ngay: ngayStr,
+              ten: ten,
+              times: timesArray
+            };
+            records.push(newRecord);
+            db.saveRecords(records);
+            db.log(operatorUsername, "Thêm ghi nhận thủ công", `Thêm chấm công thủ công ngày ${ngayStr} cho ${ten}`);
+            return { success: true };
+          }
+        },
+
+        dangNhapWeb: async (username, password) => {
+          if (useSupabase) {
+            try {
+              const { data, error } = await supabase
+                .from('chamcong_accounts')
+                .select('*')
+                .eq('username', username.trim().toLowerCase());
+              if (error) throw error;
+              if (data.length === 0) return { success: false, message: "Tài khoản không tồn tại / 账号不存在!" };
+              
+              const user = data[0];
+              if (user.passwordHash !== password) {
+                return { success: false, message: "Mật khẩu không đúng / 密码错误!" };
+              }
+              
+              return {
+                success: true,
+                user: {
+                  username: user.username,
+                  hoTen: user.hoTen,
+                  role: user.role
+                }
+              };
+            } catch (e) {
+              console.error(e);
+              return { success: false, message: e.message };
+            }
+          } else {
+            const accounts = db.getAccounts();
+            const user = accounts.find(a => a.username.toLowerCase() === username.toLowerCase() && a.passwordHash === password);
+            if (user) {
+              return {
+                success: true,
+                user: {
+                  username: user.username,
+                  hoTen: user.hoTen,
+                  role: user.role
+                }
+              };
+            }
+            return { success: false, message: "Sai tên đăng nhập hoặc mật khẩu / 用户名或密码错误!" };
+          }
+        },
+
+        layDanhSachTaiKhoanWeb: async () => {
+          if (useSupabase) {
+            try {
+              const { data, error } = await supabase
+                .from('chamcong_accounts')
+                .select('*');
+              if (error) throw error;
+              return data.map(a => ({
+                username: a.username,
+                hoTen: a.hoTen,
+                role: a.role
+              }));
+            } catch (e) {
+              console.error(e);
+              return [];
+            }
+          } else {
+            const accounts = db.getAccounts();
+            return accounts.map(a => ({
+              username: a.username,
+              hoTen: a.hoTen,
+              role: a.role
+            }));
+          }
+        },
+
+        capNhatQuyenTaiKhoanWeb: async (username, newRole, operatorUsername) => {
+          if (useSupabase) {
+            try {
+              const { error } = await supabase
+                .from('chamcong_accounts')
+                .update({ role: newRole })
+                .eq('username', username);
+              if (error) throw error;
+
+              await backend.ghiNhatKy(operatorUsername, "Cập nhật quyền", `Thay đổi quyền của ${username} thành ${newRole}`);
+              return { success: true };
+            } catch (e) {
+              console.error(e);
+              return { success: false, message: e.message };
+            }
+          } else {
+            const accounts = db.getAccounts();
+            const user = accounts.find(a => a.username.toLowerCase() === username.toLowerCase());
+            if (!user) return { success: false, message: "Không tìm thấy tài khoản!" };
+            
+            user.role = newRole;
+            db.saveAccounts(accounts);
+            db.log(operatorUsername, "Cập nhật quyền", `Thay đổi quyền của ${username} thành ${newRole}`);
+            return { success: true };
+          }
+        },
+
+        xoaTaiKhoanWeb: async (username, operatorUsername) => {
+          if (username.toLowerCase() === "admin") {
+            return { success: false, message: "Không thể xóa tài khoản Admin gốc!" };
+          }
+          if (useSupabase) {
+            try {
+              const { error } = await supabase
+                .from('chamcong_accounts')
+                .delete()
+                .eq('username', username);
+              if (error) throw error;
+
+              await backend.ghiNhatKy(operatorUsername, "Xóa tài khoản", `Xóa tài khoản: ${username}`);
+              return { success: true };
+            } catch (e) {
+              console.error(e);
+              return { success: false, message: e.message };
+            }
+          } else {
+            let accounts = db.getAccounts();
+            const originalLength = accounts.length;
+            accounts = accounts.filter(a => a.username.toLowerCase() !== username.toLowerCase());
+            if (accounts.length === originalLength) {
+              return { success: false, message: "Không tìm thấy tài khoản!" };
+            }
+            db.saveAccounts(accounts);
+            db.log(operatorUsername, "Xóa tài khoản", `Xóa tài khoản: ${username}`);
+            return { success: true };
+          }
+        },
+
+        dangKyTaiKhoanWeb: async (username, password, hoTen) => {
+          const uName = username.trim().toLowerCase();
+          if (useSupabase) {
+            try {
+              const { data, error } = await supabase
+                .from('chamcong_accounts')
+                .select('username')
+                .eq('username', uName);
+              if (error) throw error;
+              if (data.length > 0) return { success: false, message: "Tài khoản đăng nhập đã tồn tại!" };
+
+              const { error: insErr } = await supabase
+                .from('chamcong_accounts')
+                .insert({ username: uName, passwordHash: password, hoTen: hoTen, role: "Guest" });
+              if (insErr) throw insErr;
+
+              return { success: true };
+            } catch (e) {
+              console.error(e);
+              return { success: false, message: e.message };
+            }
+          } else {
+            const accounts = db.getAccounts();
+            if (accounts.some(a => a.username.toLowerCase() === uName)) {
+              return { success: false, message: "Tài khoản đăng nhập đã tồn tại!" };
+            }
+            accounts.push({
+              username: uName,
+              passwordHash: password, 
+              hoTen: hoTen,
+              role: "Guest"
+            });
+            db.saveAccounts(accounts);
+            return { success: true };
+          }
+        },
+
+        doiMatKhauWeb: async (username, oldPassword, newPassword) => {
+          if (useSupabase) {
+            try {
+              const { data, error } = await supabase
+                .from('chamcong_accounts')
+                .select('*')
+                .eq('username', username);
+              if (error) throw error;
+              if (data.length === 0) return { success: false, message: "Không tìm thấy tài khoản!" };
+
+              const user = data[0];
+              if (user.passwordHash !== oldPassword) {
+                return { success: false, message: "Mật khẩu cũ không chính xác!" };
+              }
+
+              const { error: updErr } = await supabase
+                .from('chamcong_accounts')
+                .update({ passwordHash: newPassword })
+                .eq('username', username);
+              if (updErr) throw updErr;
+
+              return { success: true };
+            } catch (e) {
+              console.error(e);
+              return { success: false, message: e.message };
+            }
+          } else {
+            const accounts = db.getAccounts();
+            const user = accounts.find(a => a.username.toLowerCase() === username.toLowerCase());
+            if (!user) return { success: false, message: "Không tìm thấy tài khoản!" };
+            if (user.passwordHash !== oldPassword) {
+              return { success: false, message: "Mật khẩu cũ không chính xác!" };
+            }
+            user.passwordHash = newPassword;
+            db.saveAccounts(accounts);
+            return { success: true };
+          }
+        },
+
+        layNhatKyHoatDong: async () => {
+          if (useSupabase) {
+            try {
+              const { data, error } = await supabase
+                .from('chamcong_logs')
+                .select('*')
+                .order('id', { ascending: false })
+                .limit(100);
+              if (error) throw error;
+
+              return data.map(l => ({
+                time: l.time || "",
+                user: l.user || "",
+                action: l.action || "",
+                details: l.details || ""
+              }));
+            } catch (e) {
+              console.error(e);
+              return [];
+            }
+          } else {
+            const logs = db.getLogs();
+            const list = logs.map(l => ({
+              time: l.time || "",
+              user: l.user || "",
+              action: l.action || "",
+              details: l.details || ""
+            }));
+            list.reverse();
+            return list;
+          }
+        },
+
+        xoaNhatKyHoatDong: async () => {
+          if (useSupabase) {
+            try {
+              const { error } = await supabase
+                .from('chamcong_logs')
+                .delete()
+                .neq('id', 0);
+              if (error) throw error;
+              return true;
+            } catch (e) {
+              console.error(e);
+              return false;
+            }
+          } else {
+            db.saveLogs([]);
+            return true;
+          }
+        },
+
+        ghiNhatKy: async (username, action, details) => {
+          if (useSupabase) {
+            try {
+              const { error } = await supabase
+                .from('chamcong_logs')
+                .insert({
+                  time: `${getFormattedDate()} ${getFormattedTime()}`,
+                  user: username || "Hệ thống",
+                  action: action,
+                  details: details
+                });
+              if (error) throw error;
+              return true;
+            } catch (e) {
+              console.error(e);
+              return false;
+            }
+          } else {
+            db.log(username, action, details);
+            return true;
+          }
+        },
+
+        tinhTongGio: (rowTimes) => {
+          return localTinhTongGio(rowTimes);
+        }
+      };
 
       window.google = {
         script: {
@@ -2208,7 +2694,18 @@
                     try {
                       if (typeof backend[propKey] === 'function') {
                         const res = backend[propKey](...args);
-                        if (successCallback) successCallback(res);
+                        
+                        // Handle Async/Promise responses from Supabase DB call
+                        if (res instanceof Promise || (res && typeof res.then === 'function')) {
+                          res.then(val => {
+                            if (successCallback) successCallback(val);
+                          }).catch(err => {
+                            console.error(`Promise execution error on method ${propKey}:`, err);
+                            if (failureCallback) failureCallback(err);
+                          });
+                        } else {
+                          if (successCallback) successCallback(res);
+                        }
                       } else {
                         console.error(`Mock method ${propKey} is not implemented!`);
                         if (failureCallback) failureCallback(new Error(`Method ${propKey} not found`));
