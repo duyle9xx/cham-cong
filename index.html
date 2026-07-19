@@ -1802,10 +1802,10 @@
         const defaultEmployees = [
           { ten: "阿纯 Thuần", trangThai: "⚪ Chưa bắt đầu / 未开始", checkInTime: "", checkOutTime: "" },
           { ten: "阿中 Chung", trangThai: "⚪ Chưa bắt đầu / 未开始", checkInTime: "", checkOutTime: "" },
-          { ten: "阿刚 Cương", trangThai: "⚪ Chưa bắt đầu / 未 bắt đầu", checkInTime: "", checkOutTime: "" },
-          { ten: "阿长 Trường", trangThai: "⚪ Chưa bắt đầu / 未 bắt đầu", checkInTime: "", checkOutTime: "" },
-          { ten: "阿维 Duy", trangThai: "⚪ Chưa bắt đầu / 未 bắt đầu", checkInTime: "", checkOutTime: "" },
-          { ten: "阿庄 Trang", trangThai: "⚪ Chưa bắt đầu / 未 bắt đầu", checkInTime: "", checkOutTime: "" }
+          { ten: "阿刚 Cương", trangThai: "⚪ Chưa bắt đầu / 未开始", checkInTime: "", checkOutTime: "" },
+          { ten: "阿长 Trường", trangThai: "⚪ Chưa bắt đầu / 未开始", checkInTime: "", checkOutTime: "" },
+          { ten: "阿维 Duy", trangThai: "⚪ Chưa bắt đầu / 未开始", checkInTime: "", checkOutTime: "" },
+          { ten: "阿庄 Trang", trangThai: "⚪ Chưa bắt đầu / 未开始", checkInTime: "", checkOutTime: "" }
         ];
         localStorage.setItem('chamcong_employees', JSON.stringify(defaultEmployees));
       }
@@ -1915,6 +1915,7 @@
               const todayStr = getFormattedDate();
               const { data: recs, error: err2 } = await supabase
                 .from('chamcong_records')
+                .select('*')
                 .eq('ngay', todayStr);
               if (err2) throw err2;
 
@@ -2070,7 +2071,7 @@
                   }
                 }
                 if (slotIndex === -1) {
-                  return { success: false, message: "Đã đạt giới hạn tối đa 10 ca làm việc trong ngày / 已达到单日10轮考勤上限!" };
+                  return { success: false, message: "Đã đạt giới hạn tối đa 10 ca làm việc trong ngày / 已 đạt đến giới hạn ca!" };
                 }
                 timesArray[slotIndex] = gio;
               } else {
@@ -2082,7 +2083,7 @@
                   }
                 }
                 if (slotIndex === -1) {
-                  return { success: false, message: "Không tìm thấy lượt Check-in hợp lệ để Check-out / 未找到对应Check-in记录!" };
+                  return { success: false, message: "Không tìm thấy lượt Check-in hợp lệ để Check-out / 未 tìm thấy Check-in!" };
                 }
                 timesArray[slotIndex] = gio;
               }
@@ -2131,7 +2132,7 @@
           } else {
             const employees = db.getEmployees();
             const emp = employees.find(e => e.ten === ten);
-            if (!emp) return { success: false, message: "Không tìm thấy nhân viên / 未找到员工!" };
+            if (!emp) return { success: false, message: "Không tìm thấy nhân viên / 未 tìm thấy nhân viên!" };
 
             const records = db.getRecords();
             let record = records.find(r => r.ngay === ngay && r.ten === ten);
@@ -2169,7 +2170,7 @@
                 }
               }
               if (slotIndex === -1) {
-                return { success: false, message: "Không tìm thấy lượt Check-in hợp lệ để Check-out / 未找到对应Check-in记录!" };
+                return { success: false, message: "Không tìm thấy lượt Check-in hợp lệ để Check-out / 未 tìm thấy Check-in!" };
               }
               record.times[slotIndex] = gio;
               emp.trangThai = "🔴 Đã kết thúc / 已结束";
@@ -2189,6 +2190,7 @@
             try {
               const { data: recs, error } = await supabase
                 .from('chamcong_records')
+                .select('*')
                 .eq('ngay', ngay);
               if (error) throw error;
 
@@ -4038,7 +4040,7 @@
     // Xuất báo cáo PDF chi tiết màu trắng thanh lịch chuyên nghiệp
     function exportReportToExcel() {
       if (state.reportData.length === 0) {
-        showToast("Không có dữ liệu để xuất Excel! / 暂无数据可导出。", "warning");
+        showToast("Không có dữ liệu để xuất Excel! / 暂无 data 可导出。", "warning");
         return;
       }
       
