@@ -1761,7 +1761,7 @@
     (function() {
       // Supabase Credentials
       const SUPABASE_URL = "https://mkzluvuzwhfnbcjgkwda.supabase.co";
-      const SUPABASE_KEY = "sb_publishable_03fG9WjWVpa66aDUjJwQrA_bQyBS1uj";
+      const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1remx1dnV6d2hmbmJjamdrd2RhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQ0ODE4MDMsImV4cCI6MjEwMDA1NzgwM30.iyGE-2Vyusjnjtt9F8LlPaHFsrRVWqC3Teh82PPp87s";
 
       const useSupabase = SUPABASE_URL && SUPABASE_KEY && (typeof window.supabase !== 'undefined');
       const supabase = useSupabase ? window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY) : null;
